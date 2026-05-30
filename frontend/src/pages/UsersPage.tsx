@@ -4,7 +4,7 @@ import { ErrorAlert } from '@/components/ErrorAlert';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { UserFormDialog } from '@/components/UserFormDialog';
 import { UserCard } from '@/components/UserCard';
-import { CopyButton } from '@/components/CopyButton';
+import { ProxyLinkButtons, type ProxyLink } from '@/components/ProxyLinkButtons';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -49,12 +49,6 @@ interface UserInfo {
   links?: UserLinks;
 }
 
-interface LinkEntry {
-  url: string;
-  label: string;
-  host: string;
-}
-
 function getServer(raw: string): string {
   try {
     return new URL(raw).searchParams.get('server') ?? '';
@@ -75,29 +69,20 @@ function appendComment(raw: string, username: string): string {
   }
 }
 
-function collectLinks(links?: UserLinks, username?: string): LinkEntry[] {
-  const result: LinkEntry[] = [];
-  if (!links) return result;
-  const addLink = (rawUrl: string, label: string, host: string) => {
-    const url = username ? appendComment(rawUrl, username) : rawUrl;
-    result.push({ url, label, host });
-  };
-  const addLinks = (urls: string[], label: string) => {
-    for (const url of urls) addLink(url, label, getServer(url));
-  };
-
-  if (links.tls) {
-    // tls_domains maps each fronted TLS link to its faketls *masking* domain. The
-    // masking domain may be an arbitrary third-party host, so we must NOT rewrite the
-    // link's `server` — but we do use it as the display label, since the links are
-    // otherwise identical to the eye. Links with no masking entry (e.g. the primary
-    // one) fall back to their real server.
-    const maskByLink = new Map((links.tls_domains ?? []).map((d) => [d.link, d.domain]));
-    for (const url of links.tls) addLink(url, 'TLS', maskByLink.get(url) ?? getServer(url));
-  }
-  if (links.secure) addLinks(links.secure, 'Secure');
-  if (links.classic) addLinks(links.classic, 'Classic');
-  return result;
+// Build the selectable TLS link list for a user. Each tls link keeps its real
+// `server` untouched; tls_domains only supplies the display label (faketls masking
+// domain). Links with no masking entry are the primary/default and are surfaced
+// first. Secure/Classic links are intentionally not shown.
+function tlsLinks(links: UserLinks | undefined, username: string): ProxyLink[] {
+  if (!links?.tls?.length) return [];
+  const maskByLink = new Map((links.tls_domains ?? []).map((d) => [d.link, d.domain]));
+  return links.tls
+    .map((link) => ({
+      url: appendComment(link, username),
+      domain: maskByLink.get(link) ?? getServer(link),
+      isDefault: !maskByLink.has(link),
+    }))
+    .sort((a, b) => Number(b.isDefault) - Number(a.isDefault));
 }
 
 function QuotaCell({ user, entry }: { user: UserInfo; entry?: QuotaEntry }) {
@@ -391,7 +376,6 @@ export function UsersPage() {
                   </TableRow>
                 ) : (
                   pagedUsers.map((u) => {
-                    const allLinks = collectLinks(u.links, u.username);
                     const hasConns = u.current_connections > 0;
 
                     return (
@@ -400,23 +384,7 @@ export function UsersPage() {
                           <Link to={`/users/${u.username}`} className="text-accent hover:underline">{u.username}</Link>
                         </TableCell>
                         <TableCell>
-                          {allLinks.length > 0 ? (
-                            <div className="flex flex-col gap-1">
-                              {allLinks.map((link, i) => (
-                                <div key={i} className="flex items-center gap-1">
-                                  {link.host && (
-                                    <span className="text-[11px] font-mono text-text-secondary truncate max-w-[150px]" title={`${link.label}: ${link.host}`}>
-                                      {link.host}
-                                    </span>
-                                  )}
-                                  <CopyButton text={link.url} label={link.label} />
-                                  <CopyButton text={link.url.replace('tg://proxy', 'https://t.me/proxy')} label="t.me" />
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <span className="text-text-secondary text-xs">No links</span>
-                          )}
+                          <ProxyLinkButtons links={tlsLinks(u.links, u.username)} />
                         </TableCell>
                         <TableCell>
                           <Badge variant={u.current_connections > 0 ? 'default' : 'outline'}>
@@ -484,8 +452,6 @@ export function UsersPage() {
             </div>
           ) : (
             pagedUsers.map((u) => {
-              const allLinks = collectLinks(u.links, u.username);
-
               return (
                 <UserCard
                   key={u.username}
@@ -495,7 +461,7 @@ export function UsersPage() {
                   activeUniqueIps={u.active_unique_ips}
                   totalTraffic={u.total_octets}
                   online={u.current_connections > 0}
-                  links={allLinks}
+                  links={tlsLinks(u.links, u.username)}
                   onEdit={() => setEditUser(u)}
                   onDelete={() => setDeleteUser(u.username)}
                   quotaUsed={quotaByUser.get(u.username)?.used_bytes}

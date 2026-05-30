@@ -2,13 +2,7 @@ import { Pencil, Trash2, RotateCcw } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { QuotaBar } from '@/components/QuotaBar';
-import { CopyButton } from '@/components/CopyButton';
-
-export interface UserCardLink {
-  url: string;
-  label: string;
-  host: string;
-}
+import { ProxyLinkButtons, type ProxyLink } from '@/components/ProxyLinkButtons';
 
 export interface UserCardProps {
   username: string;
@@ -18,7 +12,7 @@ export interface UserCardProps {
   totalTraffic: number;
   online: boolean;
   expiration?: string;
-  links?: UserCardLink[];
+  links?: ProxyLink[];
   quotaUsed?: number;
   quotaLimit?: number;
   onEdit: () => void;
@@ -119,21 +113,8 @@ export function UserCard({
         </div>
 
         {links && links.length > 0 && (
-          <div className="mt-2 space-y-1">
-            {links.map((link, i) => (
-              <div key={i} className="flex items-center gap-1 flex-wrap">
-                {link.host && (
-                  <span
-                    className="text-[11px] font-mono text-text-secondary truncate max-w-full"
-                    title={`${link.label}: ${link.host}`}
-                  >
-                    {link.host}
-                  </span>
-                )}
-                <CopyButton text={link.url} label={link.label} />
-                <CopyButton text={link.url.replace('tg://proxy', 'https://t.me/proxy')} label="t.me" />
-              </div>
-            ))}
+          <div className="mt-2">
+            <ProxyLinkButtons links={links} />
           </div>
         )}
 
